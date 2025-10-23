@@ -48,7 +48,7 @@
                           src="./human_model.glb"
                           position="0 0.05 0"   
                           rotation="0 180 0" 
-                          scale="0.5 0.5 0.5"
+                          scale="0.5 0.5 0.5" 
                           animation="property: rotation; to: 0 540 0; loop: true; dur: 10000; easing: linear;">
             </a-gltf-model>
             
@@ -179,16 +179,14 @@
             statusEl.textContent = message;
             buttonEl.disabled = isLoading;
             
-            // Glowing logic for primitive cylinder
+            // Glowing logic for GLTF model
             if (isLoading) {
                 statusEl.innerHTML = `<div class="spinner inline-block mr-2"></div> ${message}`;
                 // Red glow when thinking
-                arModelEl.setAttribute('material', 'emissive', '#ef4444');
-                arModelEl.setAttribute('material', 'emissiveIntensity', 0.8);
+                arModelEl.setAttribute('material', 'emissive', '#ef4444'); 
             } else {
                 // Blue glow when ready
                 arModelEl.setAttribute('material', 'emissive', '#60a5fa');
-                arModelEl.setAttribute('material', 'emissiveIntensity', 0.2);
             }
         }
 
@@ -268,17 +266,15 @@
                 
                 const audio = new Audio(audioUrl);
 
-                // Visual Pulse while speaking for primitive
+                // Visual Pulse while speaking for GLTF model
                 audio.onplaying = () => {
-                    // Brighter color and intensity while speaking
+                    // Change color to vibrant cyan/blue
                     arModelEl.setAttribute('material', 'emissive', '#38bdf8'); 
-                    arModelEl.setAttribute('material', 'emissiveIntensity', 1.5);
                 };
 
                 audio.onended = () => {
                     // Revert to the default "ready" state glow
                     arModelEl.setAttribute('material', 'emissive', '#60a5fa');
-                    arModelEl.setAttribute('material', 'emissiveIntensity', 0.2);
                     URL.revokeObjectURL(audioUrl); // Clean up the Blob URL
                 };
                 
@@ -286,7 +282,6 @@
                      console.warn("Audio playback failed (browser restriction, muted?):", e);
                      // Also revert the state if playback fails to start
                      arModelEl.setAttribute('material', 'emissive', '#60a5fa');
-                     arModelEl.setAttribute('material', 'emissiveIntensity', 0.2);
                 });
 
             } else {
@@ -336,20 +331,17 @@
             });
             setStatus("Ready. Find and scan the Hiro marker!", false);
             
-            // NOTE: Removed model-loaded/model-error listeners as we are using a primitive.
+            // --- Model Loading Debug (Crucial check) ---
+            arModelEl.addEventListener('model-loaded', () => {
+                console.log("3D Model loaded successfully!");
+            });
+
+            arModelEl.addEventListener('model-error', (e) => {
+                console.error("3D Model failed to load! Check the URL/path. Error:", e);
+                arTextEl.setAttribute('value', "Error loading 3D model.");
+            });
         };
 
     </script>
 </body>
-
 </html>
-
-
-
-
-
-
-
-
-
-
