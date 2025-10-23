@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR AI Assistant</title>
+    <!-- Tailwind CSS for modern UI overlay -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- A-Frame and AR.js for Web AR -->
+    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+    
+    <style>
+        /* Essential styles for AR.js */
+        body { margin: 0; overflow: hidden; }
+        .ar-controls {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            z-index: 9999;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(5px);
+            padding: 1rem;
+            box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.5);
+            color: white;
+        }
+        /* Custom spinner for loading state */
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid #3498db;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="font-sans">
+
+    <!-- AR Scene Setup: Uses the 'hiro' marker -->
+    <a-scene embedded arjs='sourceType: webcam; debugUIEnabled: false; detectionMode: mono;'>
+
+        <!-- Marker Anchor: Everything inside this entity appears on the marker -->
+        <a-marker preset='hiro'>
+            
+            <!-- 1. The Assistant Avatar (Glowing Orb) -->
+            <a-sphere id="assistant-sphere" 
+                      position="0 0.5 0" 
+                      radius="0.4" 
+                      color="#4b5563"
+                      emissive="#60a5fa"
+                      emissive-intensity="0.2"
+                      animation="property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear;">
+            </a-sphere>
+            
+            <!-- 2. The Text Display (Always facing the camera) -->
+            <a-entity id="assistant-text-entity" 
+                      look-at="[camera]"
+                      position="0 1.5 0">
+                <a-text id="assistant-text"
+                        value="Hello! Ask me anything." 
+                        align="center"
+                        width="2.5"
+                        wrap-count="30"
+                        color="#ffffff"
+                        background-color="#1f2937"
+                        position="0 0 0.05">
+                </a-text>
+            </a-entity>
+        </a-marker>
+
+        <!-- Default AR Camera Setup -->
+        <a-entity camera></a-entity>
+    </a-scene>
+
+    <!-- UI Control Panel (HTML/Tailwind) -->
+    <div class="ar-controls flex flex-col space-y-3 rounded-t-xl">
+        <h1 class="text-lg font-bold text-blue-300">AR Gemini Assistant (Hiro Marker)</h1>
+        
+        <input type="text" id="user-input" placeholder="Type your question here (e.g., 'What are three fun facts about Mars?')"
+               class="p-3 w-full bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        
+        <div class="flex items-center space-x-4">
+            <button id="ask-button" onclick="handleAsk()"
+                    class="flex-grow p-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-lg transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed">
+                Ask Assistant (Speak & Display)
+            </button>
+            <div id="status-message" class="text-sm text-center">Ready</div>
+        </div>
+    </div>
+
+    <script>
+        // --- Configuration ---
+        const API_KEY = ""; // Canvas will provide this during runtime
+        const TEXT_MODEL = 'gemini-2.5-flash-preview-09-2025';
+        const TTS_MODEL = 'gemini-2.5-flash-preview-tts';
+        const ASSISTANT_VOICE = 'Kore'; // Informative, clear voice
+        
+        // --- DOM Elements ---
+        const inputEl = document.getElementById('user-input');
+        const buttonEl = document.getElementById('ask-button');
+        const statusEl = document.getElementById('status-message');
+        const arTextEl = document.getElementById('assistant-text');
+        const arSphereEl = document.getElementById('assistant-sphere');
+
+        // --- Utility Functions for Audio (PCM to WAV Conversion) ---
+
+        /** Converts base64 string to ArrayBuffer. */
+        function base64ToArrayBuffer(base64) {
+            const binaryString = atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        /** Converts 16-bit PCM (Int16Array) to a standard WAV Blob. */
+        function pcmToWav(pcm16, sampleRate) {
+            const numChannels = 1;
+            const bitsPerSample = 16;
+            const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+            const blockAlign = numChannels * (bitsPerSample / 8);
+            const dataSize = pcm16.length * (bitsPerSample / 8);
+            const buffer = new ArrayBuffer(44 + dataSize);
+            const view = new DataView(buffer);
+            let offset = 0;
+
+            function writeString(s) {
+                for (let i = 0; i < s.length; i++) {
+                    view.setUint8(offset + i, s.charCodeAt(i));
+                }
+                offset += s.length;
+            }
+
+            function writeUint32(val) {
+                view.setUint32(offset, val, true); 
+                offset += 4;
+            }
+
+            function writeUint16(val) {
+                view.setUint16(offset, val, true);
+                offset += 2;
+            }
+
+            // RIFF chunk
+            writeString('RIFF'); // Chunk ID
+            writeUint32(36 + dataSize); // Chunk size
+            writeString('WAVE'); // Format
+
+            // FMT sub-chunk
+            writeString('fmt '); // Sub-chunk 1 ID
+            writeUint32(16); // Sub-chunk 1 size (16 for PCM)
+            writeUint16(1); // Audio format (1 for PCM)
+            writeUint16(numChannels); // Num channels
+            writeUint32(sampleRate); // Sample rate
+            writeUint32(byteRate); // Byte rate
+            writeUint16(blockAlign); // Block align
+            writeUint16(bitsPerSample); // Bits per sample
+
+            // DATA sub-chunk
+            writeString('data'); // Sub-chunk 2 ID
+            writeUint32(dataSize); // Sub-chunk 2 size
+
+            // Write PCM data
+            const pcm8 = new Uint8Array(buffer, offset);
+            let pcmIndex = 0;
+            for (let i = 0; i < pcm16.length; i++) {
+                // Little-endian write of 16-bit value
+                const value = pcm16[i];
+                view.setUint16(offset, value, true);
+                offset += 2;
+            }
+
+            return new Blob([buffer], { type: 'audio/wav' });
+        }
+        
+        // --- API Calls & Orchestration ---
+
+        /** Sets the UI state to loading/ready and controls the button. */
+        function setStatus(message, isLoading = false) {
+            statusEl.textContent = message;
+            buttonEl.disabled = isLoading;
+            if (isLoading) {
+                statusEl.innerHTML = `<div class="spinner inline-block mr-2"></div> ${message}`;
+                arSphereEl.setAttribute('material', 'emissive', '#ef4444'); // Red glow when thinking
+                arSphereEl.setAttribute('animation-duration', '500'); // Faster pulse
+            } else {
+                arSphereEl.setAttribute('material', 'emissive', '#60a5fa'); // Blue glow when ready
+                arSphereEl.setAttribute('animation-duration', '4000'); // Slow rotation
+            }
+        }
+
+        /** Calls Gemini API for text generation (grounded). */
+        async function geminiApiCall(prompt) {
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${API_KEY}`;
+            
+            const systemPrompt = "You are a helpful and engaging Augmented Reality assistant. Keep your responses concise and informational, and format complex ideas so they display well in a short block of text (use simple language and structure).";
+            
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+                tools: [{ "google_search": {} }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+            };
+
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                throw new Error(`Text API error: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+            
+            if (!text) {
+                console.error("Gemini response lacked text:", result);
+                return "I'm sorry, I couldn't generate a clear response. Please try again.";
+            }
+            return text;
+        }
+
+        /** Calls Gemini TTS API, converts PCM, and plays audio. */
+        async function ttsApiCall(text) {
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${API_KEY}`;
+            
+            const payload = {
+                contents: [{ parts: [{ text }] }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: {
+                        voiceConfig: {
+                            prebuiltVoiceConfig: { voiceName: ASSISTANT_VOICE }
+                        }
+                    }
+                }
+            };
+
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                throw new Error(`TTS API error: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            const part = result.candidates?.[0]?.content?.parts?.[0];
+            const audioData = part?.inlineData?.data;
+            const mimeType = part?.inlineData?.mimeType;
+
+            if (audioData && mimeType && mimeType.startsWith("audio/L16")) {
+                // Extract sample rate from mimeType string (e.g., audio/L16;rate=24000)
+                const rateMatch = mimeType.match(/rate=(\d+)/);
+                const sampleRate = rateMatch ? parseInt(rateMatch[1], 10) : 24000; 
+
+                const pcmBuffer = base64ToArrayBuffer(audioData);
+                const pcm16 = new Int16Array(pcmBuffer);
+                
+                const wavBlob = pcmToWav(pcm16, sampleRate);
+                const audioUrl = URL.createObjectURL(wavBlob);
+                
+                const audio = new Audio(audioUrl);
+                audio.play().catch(e => console.warn("Audio playback failed (browser restriction, muted?):", e));
+            } else {
+                console.error("TTS response lacked audio data or valid mime type:", result);
+            }
+        }
+        
+        /** Main function to handle user query. */
+        async function handleAsk() {
+            const prompt = inputEl.value.trim();
+            if (!prompt) {
+                setStatus("Please enter a question.", false);
+                return;
+            }
+
+            setStatus("Thinking and generating response...", true);
+            
+            try {
+                // 1. Get Text Response from Gemini
+                const responseText = await geminiApiCall(prompt);
+                
+                // Format for A-Frame: Text component uses \n for line breaks
+                const formattedText = responseText.replace(/\n\s*/g, '\n').trim();
+                arTextEl.setAttribute('value', formattedText);
+                
+                setStatus("Speaking the response...", true);
+                
+                // 2. Generate and Play Audio from the same text
+                await ttsApiCall(responseText);
+
+                setStatus("Ready", false);
+            } catch (error) {
+                console.error("An error occurred during API call:", error);
+                const errorMessage = "Error: Could not connect to assistant.";
+                arTextEl.setAttribute('value', errorMessage);
+                setStatus(errorMessage, false);
+            }
+        }
+
+        // Initialize state message
+        window.onload = () => {
+             // Attach event listener for the Enter key on the input field
+            inputEl.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && !buttonEl.disabled) {
+                    handleAsk();
+                }
+            });
+            setStatus("Ready. Find and scan the Hiro marker!", false);
+        };
+
+    </script>
+</body>
+</html>
