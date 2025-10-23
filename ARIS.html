@@ -44,27 +44,21 @@
 
         <a-marker preset='hiro'>
             
-            <a-gltf-model id="assistant-model" 
-                          src="./human_model.glb"
-                          position="0 0.05 0"   
-                          rotation="0 180 0" 
-                          scale="0.05 0.05 0.05"  
-                          animation="property: rotation; to: 0 540 0; loop: true; dur: 10000; easing: linear;">
-            </a-gltf-model>
+            <a-entity id="model-parent"
+                      scale="0.05 0.05 0.05"> 
+            
+                <a-gltf-model id="assistant-model" 
+                              src="./human_model.glb"
+                              position="0 0.05 0"   
+                              rotation="0 180 0" 
+                              animation="property: rotation; to: 0 540 0; loop: true; dur: 10000; easing: linear;">
+                </a-gltf-model>
+                
+            </a-entity>
             
             <a-entity id="assistant-text-entity" 
                       look-at="[camera]"
-                      position="0 1.5 0">
-                <a-text id="assistant-text"
-                        value="Hello! Ask me anything." 
-                        align="center"
-                        width="2.5"
-                        wrap-count="30"
-                        color="#ffffff"
-                        background-color="#1f2937"
-                        position="0 0 0.05">
-                </a-text>
-            </a-entity>
+                      position="0 0.5 0"> </a-entity>
         </a-marker>
 
         <a-entity camera></a-entity>
@@ -345,5 +339,6 @@
     </script>
 </body>
 </html>
+
 
 
